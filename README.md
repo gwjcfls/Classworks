@@ -4,8 +4,6 @@
 原项目是一套面向班级大屏的作业板，本分支保留 Vue 3、Vuetify 3 和 PWA
 界面，把前端、接口与云端存储放进同一个 Cloudflare Worker，数据保存在部署者自己的 Workers KV 中。
 
-在线实例：[classworks-board.gwjcfls.workers.dev](https://classworks-board.gwjcfls.workers.dev)
-
 ![Classworks](./images/banner.png)
 
 ## 与原项目的不同
