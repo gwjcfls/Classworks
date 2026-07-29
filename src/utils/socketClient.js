@@ -1,110 +1,199 @@
-// Lightweight reusable Socket.IO client singleton
-// - Uses server domain from settings when available
-// - Exposes join/leave helpers and event on/off wrappers
+// Cloudflare Workers compatible real-time adapter.
+// The UI-facing API stays compatible with the former Socket.IO client.
 
-import {io} from 'socket.io-client';
-import {getSetting} from '@/utils/settings';
-import {getEffectiveServerUrl, isRotationEnabled} from '@/utils/serverRotation';
+import { getSetting } from '@/utils/settings'
 
-let socket = null;
-let connectedDomain = null;
-const listeners = new Set();
+const POLL_INTERVAL_MS = 60 * 1000
+const listeners = new Map()
+
+let socket = null
+let joinedToken = ''
+let pollTimer = null
+let pollCursor = Date.now()
+let pollInFlight = false
+
+function listenerSet(event) {
+  if (!listeners.has(event)) listeners.set(event, new Set())
+  return listeners.get(event)
+}
+
+function dispatch(event, payload) {
+  const handlers = listeners.get(event)
+  if (!handlers) return
+  handlers.forEach(handler => {
+    try {
+      handler(payload)
+    } catch (error) {
+      console.error(`实时事件 ${event} 处理失败`, error)
+    }
+  })
+}
+
+function authHeaders(token = joinedToken) {
+  return {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+    'x-app-token': token,
+  }
+}
 
 export function getServerUrl() {
-  // For classworkscloud provider, use the effective server URL from rotation
-  if (isRotationEnabled()) {
-    return getEffectiveServerUrl();
+  return getSetting('server.domain') || window.location.origin
+}
+
+async function pollEvents() {
+  if (!joinedToken || pollInFlight || document.visibilityState === 'hidden') return
+  pollInFlight = true
+
+  try {
+    const response = await fetch(
+      `${getServerUrl()}/api/events?since=${encodeURIComponent(pollCursor)}`,
+      { headers: authHeaders() },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+    const payload = await response.json()
+    const events = Array.isArray(payload.events) ? payload.events : []
+    events.forEach(event => dispatch('device-event', event))
+    pollCursor = Math.max(
+      Number(payload.cursor) || Date.now(),
+      ...events.map(event => Number(event.timestampMs) || 0),
+    )
+
+    if (!socket.connected) {
+      socket.connected = true
+      dispatch('connect')
+    }
+  } catch (error) {
+    if (socket?.connected) {
+      socket.connected = false
+      dispatch('disconnect', 'polling error')
+    }
+    console.debug('云端实时轮询暂时不可用', error)
+  } finally {
+    pollInFlight = false
+  }
+}
+
+function startPolling(token) {
+  if (!token) return
+  joinedToken = token
+  pollCursor = Date.now() - POLL_INTERVAL_MS
+  if (pollTimer) clearInterval(pollTimer)
+  pollEvents()
+  pollTimer = setInterval(pollEvents, POLL_INTERVAL_MS)
+}
+
+function stopPolling() {
+  if (pollTimer) clearInterval(pollTimer)
+  pollTimer = null
+  joinedToken = ''
+  if (socket) socket.connected = false
+}
+
+async function postEvent(type, content) {
+  const token = joinedToken || getSetting('server.kvToken')
+  if (!token) return
+
+  try {
+    const response = await fetch(`${getServerUrl()}/api/events`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ type, content }),
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  } catch (error) {
+    console.warn('发送云端实时事件失败', error)
+  }
+}
+
+function createCompatSocket() {
+  const ioListeners = new Map()
+  const socketIo = {
+    engine: {
+      transport: { name: 'cloudflare-kv-polling' },
+      on() {},
+      off() {},
+    },
+    on(event, handler) {
+      if (!ioListeners.has(event)) ioListeners.set(event, new Set())
+      ioListeners.get(event).add(handler)
+    },
+    off(event, handler) {
+      ioListeners.get(event)?.delete(handler)
+    },
   }
 
-  // Prefer configured server domain; fallback to env; then current origin
-  const cfg = getSetting('server.domain');
-  const envUrl = import.meta?.env?.VITE_SERVER_URL;
-  return cfg || envUrl || window.location.origin;
+  return {
+    id: `cf-${globalThis.crypto.randomUUID()}`,
+    connected: false,
+    io: socketIo,
+    on(event, handler) {
+      listenerSet(event).add(handler)
+      return this
+    },
+    off(event, handler) {
+      listenerSet(event).delete(handler)
+      return this
+    },
+    emit(event, payload) {
+      if (event === 'join-token') {
+        startPolling(payload?.token)
+      } else if (event === 'leave-token' || event === 'leave-all') {
+        stopPolling()
+      } else if (event === 'send-event') {
+        postEvent(payload?.type, payload?.content)
+      }
+      return this
+    },
+    disconnect() {
+      stopPolling()
+      dispatch('disconnect', 'client disconnect')
+    },
+  }
 }
 
 export function getSocket() {
-  const serverUrl = getServerUrl();
-  if (!socket || connectedDomain !== serverUrl) {
-    if (socket) {
-      try {
-        socket.disconnect();
-      } catch (e) {
-        void e; // ignore
-      }
-      socket = null;
-    }
-    connectedDomain = serverUrl;
-
-    // For classworkscloud, create socket with the first server in rotation
-    // Note: Socket.IO's built-in reconnection will retry the same server URL.
-    // Server rotation is handled at the HTTP request level, not Socket.IO level.
-    // If the Socket.IO server goes down, the connection will fail until the server recovers.
-    socket = io(serverUrl, {transports:  ["polling","websocket"]});
-
-    // Re-attach previously registered event handlers on new socket instance
-    listeners.forEach(({event, handler}) => {
-      socket.on(event, handler);
-    });
-  }
-  return socket;
+  if (!socket) socket = createCompatSocket()
+  const token = getSetting('server.kvToken')
+  if (token && token !== joinedToken) startPolling(token)
+  return socket
 }
 
 export function on(event, handler) {
-  const s = getSocket();
-  s.on(event, handler);
-  listeners.add({event, handler});
-  return () => off(event, handler);
+  getSocket().on(event, handler)
+  return () => off(event, handler)
 }
 
 export function off(event, handler) {
-  if (!socket) return;
-  socket.off(event, handler);
-  // Remove only matching entry
-  for (const item of Array.from(listeners)) {
-    if (item.event === event && item.handler === handler) {
-      listeners.delete(item);
-    }
-  }
+  socket?.off(event, handler)
 }
 
 export function joinToken(token) {
-  const s = getSocket();
-  if (!token) return;
-  s.emit('join-token', {token});
+  getSocket().emit('join-token', { token })
 }
 
 export function leaveToken(token) {
-  if (!socket) return;
-  socket.emit('leave-token', {token});
+  if (!token || token === joinedToken) getSocket().emit('leave-token', { token })
 }
 
 export function leaveAll() {
-  if (!socket) return;
-  socket.emit('leave-all');
+  getSocket().emit('leave-all')
 }
 
 export function onConnect(handler) {
-  const s = getSocket();
-  s.on('connect', handler);
-  return () => s.off('connect', handler);
+  const current = getSocket()
+  current.on('connect', handler)
+  if (current.connected) Promise.resolve().then(handler)
+  return () => current.off('connect', handler)
 }
 
 export function sendEvent(type, content = null) {
-  const s = getSocket();
-  s.emit('send-event', {
-    type,
-    content
-  });
+  getSocket().emit('send-event', { type, content })
 }
 
 export function disconnect() {
-  if (!socket) return;
-  try {
-    socket.disconnect();
-  } catch (e) {
-    void e; // ignore
-  }
-  socket = null;
-  connectedDomain = null;
-  listeners.clear();
+  socket?.disconnect()
+  socket = null
+  listeners.clear()
 }

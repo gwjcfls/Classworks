@@ -35,30 +35,18 @@
             <v-row>
               <v-col
                 cols="12"
-                md="6"
               >
                 <v-text-field
-                  v-model="preconfigForm.namespace"
-                  hint="设备的命名空间标识符"
-                  label="命名空间"
+                  v-model="preconfigForm.token"
+                  :append-inner-icon="showToken ? 'mdi-eye-off' : 'mdi-eye'"
+                  :type="showToken ? 'text' : 'password'"
+                  hint="链接接收者将获得此班级空间的访问权限"
+                  label="云端 Token"
                   persistent-hint
-                  placeholder="例如: classroom-001"
-                  prepend-inner-icon="mdi-identifier"
+                  placeholder="cw_..."
+                  prepend-inner-icon="mdi-key-variant"
                   variant="outlined"
-                />
-              </v-col>
-              <v-col
-                cols="12"
-                md="6"
-              >
-                <v-text-field
-                  v-model="preconfigForm.authCode"
-                  hint="留空则需要用户手动输入"
-                  label="认证码"
-                  persistent-hint
-                  placeholder="设备认证码（可选）"
-                  prepend-inner-icon="mdi-lock-outline"
-                  variant="outlined"
+                  @click:append-inner="showToken = !showToken"
                 />
               </v-col>
             </v-row>
@@ -68,8 +56,8 @@
                 <v-checkbox
                   v-model="preconfigForm.autoExecute"
                   density="compact"
-                  hint="启用后会自动尝试认证，即使没有认证码也会尝试"
-                  label="自动执行认证"
+                  hint="启用后，打开链接会验证 Token 并直接连接班级空间"
+                  label="打开链接后自动连接"
                   persistent-hint
                 />
               </v-col>
@@ -77,7 +65,7 @@
 
             <!-- 预配置信息预览 -->
             <v-alert
-              v-if="preconfigForm.namespace"
+              v-if="preconfigForm.token"
               class="mt-3"
               type="info"
               variant="tonal"
@@ -93,38 +81,9 @@
                   size="small"
                   start
                 >
-                  mdi-identifier
+                  mdi-key-variant
                 </v-icon>
-                命名空间: {{ preconfigForm.namespace }}
-              </v-chip>
-              <v-chip
-                v-if="preconfigForm.authCode"
-                class="mr-2 mb-1"
-                color="warning"
-                size="small"
-              >
-                <v-icon
-                  size="small"
-                  start
-                >
-                  mdi-lock
-                </v-icon>
-                认证码: {{ preconfigForm.authCode.length > 8 ? preconfigForm.authCode.substring(0, 8) + "..." :
-                  preconfigForm.authCode }}
-              </v-chip>
-              <v-chip
-                v-else
-                class="mr-2 mb-1"
-                color="grey"
-                size="small"
-              >
-                <v-icon
-                  size="small"
-                  start
-                >
-                  mdi-lock-open
-                </v-icon>
-                无认证码
+                Token: {{ preconfigForm.token.substring(0, 12) }}...
               </v-chip>
               <v-chip
                 :color="preconfigForm.autoExecute ? 'success' : 'orange'"
@@ -139,7 +98,7 @@
                     preconfigForm.autoExecute ? "mdi-play-circle" : "mdi-hand-back-left"
                   }}
                 </v-icon>
-                {{ preconfigForm.autoExecute ? "自动认证" : "手动认证" }}
+                {{ preconfigForm.autoExecute ? "自动连接" : "确认后连接" }}
               </v-chip>
             </v-alert>
           </v-card-text>
@@ -172,6 +131,15 @@
                 @click="selectDataSourceSettings"
               >
                 数据源设置
+              </v-btn>
+              <v-btn
+                color="primary"
+                prepend-icon="mdi-view-dashboard-outline"
+                size="small"
+                variant="tonal"
+                @click="selectHomeFeatureSettings"
+              >
+                主页功能
               </v-btn>
               <v-btn
                 color="primary"
@@ -333,7 +301,7 @@
             <!-- 操作按钮 -->
             <div class="d-flex mb-3 gap-2 flex-wrap">
               <v-btn
-                :disabled="!preconfigForm.namespace.trim()"
+                :disabled="preconfigForm.token.trim().length < 16"
                 color="primary"
                 prepend-icon="mdi-auto-fix"
                 variant="flat"
@@ -344,9 +312,11 @@
               <v-btn
                 :disabled="!unifiedLink"
                 color="success"
+                :href="unifiedLink || undefined"
                 prepend-icon="mdi-test-tube"
+                rel="noopener noreferrer"
+                target="_blank"
                 variant="tonal"
-                @click="openTestLink"
               >
                 测试链接
               </v-btn>
@@ -364,7 +334,7 @@
             <v-text-field
               v-model="unifiedLink"
               :append-inner-icon="linkCopied ? 'mdi-check' : 'mdi-content-copy'"
-              :placeholder="preconfigForm.namespace ? '点击「生成统一链接」按钮' : '请先输入命名空间'"
+              :placeholder="preconfigForm.token ? '点击「生成统一链接」按钮' : '请先输入云端 Token'"
               class="mb-3"
               label="统一链接"
               readonly
@@ -435,10 +405,11 @@
             ⚠️ 安全提醒
           </div>
           <ul class="text-body-2 pl-4">
-            <li>认证码和设置信息会在URL中传输，请谨慎分发</li>
+            <li>云端 Token 和设置信息会包含在 URL 中，请谨慎分发</li>
+            <li>持有链接的人可以访问对应班级空间的数据</li>
             <li>建议仅在受信任的网络环境中使用</li>
             <li>生产环境建议使用HTTPS协议</li>
-            <li>数据源设置和已变更设置默认不包含敏感Token信息</li>
+            <li>Token 不会重复包含在“设置分享”配置中</li>
           </ul>
         </v-alert>
       </v-card-text>
@@ -449,6 +420,7 @@
 <script>
 import {
   exportSettingsAsKeyValue,
+  getSetting,
   settingsDefinitions,
 } from "@/utils/settings";
 
@@ -473,10 +445,10 @@ export default {
 
       // 预配置链接生成器相关
       preconfigForm: {
-        namespace: "",
-        authCode: "",
+        token: getSetting("server.kvToken") || "",
         autoExecute: false,
       },
+      showToken: false,
 
       // 统一链接相关
       unifiedLink: "",
@@ -604,7 +576,7 @@ export default {
     // 监听选择变化，自动生成统一链接
     selectedItems: {
       handler() {
-        if (this.preconfigForm.namespace.trim()) {
+        if (this.preconfigForm.token.trim().length >= 16) {
           this.generateUnifiedLink();
         }
       },
@@ -612,9 +584,9 @@ export default {
     },
 
     // 监听预配置表单变化，自动生成统一链接
-    "preconfigForm.namespace": {
+    "preconfigForm.token": {
       handler() {
-        if (this.preconfigForm.namespace.trim()) {
+        if (this.preconfigForm.token.trim().length >= 16) {
           this.generateUnifiedLink();
         } else {
           this.unifiedLink = "";
@@ -622,17 +594,9 @@ export default {
       },
     },
 
-    "preconfigForm.authCode": {
-      handler() {
-        if (this.preconfigForm.namespace.trim()) {
-          this.generateUnifiedLink();
-        }
-      },
-    },
-
     "preconfigForm.autoExecute": {
       handler() {
-        if (this.preconfigForm.namespace.trim()) {
+        if (this.preconfigForm.token.trim().length >= 16) {
           this.generateUnifiedLink();
         }
       },
@@ -673,7 +637,7 @@ export default {
       try {
         // 转换为JSON并进行base64编码
         const jsonString = JSON.stringify(configObj);
-        const utf8Encoder = new TextEncoder();
+        const utf8Encoder = new globalThis.TextEncoder();
         const utf8Bytes = utf8Encoder.encode(jsonString);
         const base64String = btoa(
           Array.from(utf8Bytes)
@@ -759,6 +723,26 @@ export default {
     },
 
     /**
+     * 选择主页可选功能设置
+     */
+    selectHomeFeatureSettings() {
+      const homeFeatureKeys = [
+        "randomPicker.enabled",
+        "attendance.enabled",
+        "display.showRandomButton",
+        "display.showFullscreenButton",
+        "timeCard.enabled",
+        "display.showExamScheduleButton",
+        "display.showUafTransfer",
+      ];
+
+      this.selectedItems = homeFeatureKeys.filter((key) =>
+        this.settingItems.some((item) => item.key === key)
+      );
+      this.generateLink();
+    },
+
+    /**
      * 选择已修改的设置（默认排除 server.kvToken）
      */
     selectChangedSettings() {
@@ -809,7 +793,8 @@ export default {
      * 生成包含预配置信息和设置的统一链接
      */
     generateUnifiedLink() {
-      if (!this.preconfigForm.namespace.trim()) {
+      if (this.preconfigForm.token.trim().length < 16) {
+        this.unifiedLink = "";
         return;
       }
 
@@ -818,14 +803,10 @@ export default {
         const params = new URLSearchParams();
 
         // 添加预配置参数
-        params.append("namespace", this.preconfigForm.namespace.trim());
-
-        if (this.preconfigForm.authCode.trim()) {
-          params.append("authCode", this.preconfigForm.authCode.trim());
-        }
+        params.append("token", this.preconfigForm.token.trim());
 
         if (this.preconfigForm.autoExecute) {
-          params.append("autoExecute", "true");
+          params.append("autoConnect", "true");
         }
 
         // 添加设置配置（如果有选择的设置）
@@ -839,7 +820,7 @@ export default {
 
           // 转换为JSON并进行base64编码
           const jsonString = JSON.stringify(configObj);
-          const utf8Encoder = new TextEncoder();
+          const utf8Encoder = new globalThis.TextEncoder();
           const utf8Bytes = utf8Encoder.encode(jsonString);
           const base64String = btoa(
             Array.from(utf8Bytes)
@@ -855,7 +836,7 @@ export default {
         this.linkCopied = false;
 
         console.log("生成统一链接:", this.unifiedLink);
-        console.log("包含预配置:", !!this.preconfigForm.namespace);
+        console.log("包含 Token 预配置:", !!this.preconfigForm.token);
         console.log("包含设置数量:", this.selectedItems.length);
       } catch (error) {
         console.error("生成统一链接失败:", error);
@@ -889,23 +870,14 @@ export default {
     },
 
     /**
-     * 在新窗口中测试统一链接
-     */
-    openTestLink() {
-      if (this.unifiedLink && !this.unifiedLink.includes("失败")) {
-        window.open(this.unifiedLink, "_blank");
-      }
-    },
-
-    /**
      * 清空所有数据
      */
     clearAll() {
       this.preconfigForm = {
-        namespace: "",
-        authCode: "",
+        token: "",
         autoExecute: false,
       };
+      this.showToken = false;
       this.selectedItems = [];
       this.unifiedLink = "";
       this.generatedLink = "";

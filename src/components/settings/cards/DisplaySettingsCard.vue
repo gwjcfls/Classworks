@@ -5,6 +5,31 @@
     title="显示设置"
   >
     <v-list>
+      <v-list-subheader>主页功能</v-list-subheader>
+
+      <setting-item :setting-key="'randomPicker.enabled'" />
+
+      <v-divider class="my-2" />
+      <setting-item :setting-key="'attendance.enabled'" />
+
+      <v-divider class="my-2" />
+      <setting-item :setting-key="'display.showRandomButton'" />
+
+      <v-divider class="my-2" />
+      <setting-item :setting-key="'display.showFullscreenButton'" />
+
+      <v-divider class="my-2" />
+      <setting-item :setting-key="'timeCard.enabled'" />
+
+      <v-divider class="my-2" />
+      <setting-item :setting-key="'display.showExamScheduleButton'" />
+
+      <v-divider class="my-2" />
+      <setting-item :setting-key="'display.showUafTransfer'" />
+
+      <v-divider class="my-2" />
+      <v-list-subheader>显示与交互</v-list-subheader>
+
       <v-list-item>
         <template #prepend>
           <v-icon
@@ -39,19 +64,10 @@
       </v-list-item>
 
       <v-divider class="my-2" />
-      <setting-item :setting-key="'timeCard.enabled'" />
-
-      <v-divider class="my-2" />
       <setting-item :setting-key="'display.emptySubjectDisplay'" />
 
       <v-divider class="my-2" />
       <setting-item :setting-key="'display.dynamicSort'" />
-
-      <v-divider class="my-2" />
-      <setting-item :setting-key="'display.showRandomButton'" />
-
-      <v-divider class="my-2" />
-      <setting-item :setting-key="'display.showFullscreenButton'" />
 
       <v-divider class="my-2" />
       <setting-item :setting-key="'display.cardHoverEffect'" />
@@ -64,12 +80,6 @@
 
       <v-divider class="my-2" />
       <setting-item :setting-key="'display.showAntiScreenBurnCard'" />
-
-      <v-divider class="my-2" />
-      <setting-item :setting-key="'display.showExamScheduleButton'" />
-
-      <v-divider class="my-2" />
-      <setting-item :setting-key="'display.showUafTransfer'" />
 
       <v-divider class="my-2" />
       <setting-item :setting-key="'display.forceDesktopMode'" />

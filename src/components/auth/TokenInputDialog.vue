@@ -7,8 +7,8 @@
         clearable
         density="comfortable"
         hide-details="auto"
-        label="KV 授权 Token"
-        placeholder="粘贴从授权页面获取的 Token"
+        label="云端 Token"
+        placeholder="粘贴另一台设备生成的 cw_... Token"
         variant="outlined"
       />
       <v-alert
@@ -43,7 +43,7 @@
 
 <script setup>
 import {ref} from 'vue'
-import {getSetting, setSetting} from '@/utils/settings'
+import {getDefaultServerDomain, setSetting} from '@/utils/settings'
 import axios from '@/axios/axios'
 
 defineProps({
@@ -65,7 +65,7 @@ const saveToken = async () => {
   verifying.value = true
 
   try {
-    const serverUrl = getSetting('server.domain')
+    const serverUrl = getDefaultServerDomain()
     if (!serverUrl) throw new Error('未配置服务器域名')
 
     await axios.get(`${serverUrl}/kv/_info`, {
@@ -76,6 +76,8 @@ const saveToken = async () => {
     })
 
     // 验证通过再保存
+    setSetting('server.provider', 'kv-server')
+    setSetting('server.domain', serverUrl)
     setSetting('server.kvToken', token.value)
     emit('success')
 

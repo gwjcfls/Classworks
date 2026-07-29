@@ -62,7 +62,7 @@
   <init-service-chooser
     v-if="shouldShowInit"
     :preconfig="preconfigData"
-    @done="settingsTick++"
+    @done="handleInitDone"
   />
 
   <!-- 学生姓名管理组件 -->
@@ -262,7 +262,7 @@
 
     <!-- 出勤统计区域 -->
     <attendance-sidebar
-      v-if="!isMobile"
+      v-if="!isMobile && showAttendanceStatistics"
       :student-list="state.studentList"
       :attendance="state.boardData.attendance"
       :is-editing-disabled="isEditingDisabled"
@@ -289,6 +289,7 @@
   </v-snackbar>
 
   <attendance-management-dialog
+    v-if="showAttendanceStatistics"
     v-model="state.attendanceDialog"
     :student-list="state.studentList"
     :attendance="state.boardData.attendance"
@@ -361,6 +362,7 @@
 
   <!-- 添加随机点名组件 -->
   <random-picker
+    v-if="showRandomPickerButton"
     ref="randomPicker"
     :attendance="state.boardData.attendance"
     :student-list="state.studentList"
@@ -815,8 +817,7 @@ export default {
       debouncedRealtimeRefresh: null,
       // 预配数据
       preconfigData: {
-        namespace: null,
-        authCode: null,
+        token: null,
         autoOpen: false,
         autoExecute: false,
       },
@@ -875,10 +876,11 @@ export default {
       }
     },
     sortedItems() {
+      void this.settingsTick;
       const items = [];
 
       // 如果是移动端，添加出勤卡片
-      if (this.isMobile) {
+      if (this.isMobile && this.showAttendanceStatistics) {
         items.push({
           key: 'attendance-card',
           name: '出勤统计',
@@ -1040,7 +1042,12 @@ export default {
       return this.$refs.messageLog?.unreadCount || 0;
     },
     showRandomPickerButton() {
+      void this.settingsTick;
       return getSetting("randomPicker.enabled");
+    },
+    showAttendanceStatistics() {
+      void this.settingsTick;
+      return getSetting("attendance.enabled");
     },
     showListCardButton() {
       return getSetting("display.showListCard");
@@ -1090,7 +1097,11 @@ export default {
       const onHome = this.$route?.path === "/";
       // 依赖 settingsTick 使其在设置变更时重新计算
       void this.settingsTick;
-      return onHome && isKv && (!token || token === "");
+      return (
+        onHome &&
+        isKv &&
+        (this.preconfigData.autoOpen || !token || token === "")
+      );
     },
     // 是否显示紧急通知测试按钮（仅教师和课堂令牌）
     hasExamCard() {
@@ -1316,6 +1327,11 @@ export default {
   },
 
   methods: {
+    handleInitDone() {
+      this.preconfigData.autoOpen = false;
+      this.settingsTick++;
+    },
+
     // 加载设备/命名空间信息（仅云端模式）
     async loadDeviceInfo() {
       try {
@@ -2205,16 +2221,18 @@ export default {
 
 
     openRandomPicker() {
-      if (this.$refs.randomPicker) {
+      if (this.showRandomPickerButton && this.$refs.randomPicker) {
         this.$refs.randomPicker.open();
       }
     },
 
     checkHashForRandomPicker() {
       if (window.location.hash === "#random-picker") {
+        window.location.hash = "";
+        if (!this.showRandomPickerButton) return;
+
         this.$nextTick(() => {
           console.log("打开随机点名");
-          window.location.hash = "";
           this.openRandomPicker();
         });
       }
@@ -2416,6 +2434,12 @@ export default {
     },
 
     getSettingDisplayName(key) {
+      const fullNameMap = {
+        "randomPicker.enabled": "随机点名",
+        "attendance.enabled": "出勤统计",
+      };
+      if (fullNameMap[key]) return fullNameMap[key];
+
       const parts = key.split(".");
       const lastPart = parts[parts.length - 1];
 
@@ -2478,6 +2502,7 @@ export default {
       }
 
       this.updateBackendUrl();
+      this.settingsTick++;
       this.$message.success("URL配置已应用", "已从URL加载配置");
       return true;
     },
@@ -2556,33 +2581,52 @@ export default {
     parsePreconfigData() {
       try {
         const urlParams = new URLSearchParams(window.location.search);
-        const namespace = urlParams.get("namespace");
-        const authCode =
-          urlParams.get("authCode") || urlParams.get("auth_code");
+        const explicitToken =
+          urlParams.get("token") ||
+          urlParams.get("kvToken") ||
+          urlParams.get("kv_token");
+        const legacyNamespace = urlParams.get("namespace");
+        const token =
+          explicitToken ||
+          (legacyNamespace?.startsWith("cw_") ? legacyNamespace : null);
         const autoExecute =
-          urlParams.get("autoExecute") || urlParams.get("auto_execute");
+          urlParams.get("autoConnect") ||
+          urlParams.get("auto_connect") ||
+          urlParams.get("autoExecute") ||
+          urlParams.get("auto_execute");
+        const preconfigParams = [
+          "token",
+          "kvToken",
+          "kv_token",
+          "namespace",
+          "authCode",
+          "auth_code",
+          "autoConnect",
+          "auto_connect",
+          "autoExecute",
+          "auto_execute",
+        ];
+        const hasPreconfigParams = preconfigParams.some((key) =>
+          urlParams.has(key)
+        );
 
-        if (namespace) {
-          this.preconfigData.namespace = namespace;
-          this.preconfigData.authCode = authCode;
+        if (token?.trim().length >= 16) {
+          this.preconfigData.token = token.trim();
           this.preconfigData.autoOpen = true;
           // 解析自动执行参数，支持 true/false、1/0、yes/no
           this.preconfigData.autoExecute = this.parseBoolean(autoExecute);
 
           console.log("检测到预配数据:", {
-            namespace: this.preconfigData.namespace,
-            hasAuthCode: !!this.preconfigData.authCode,
+            hasToken: true,
             autoExecute: this.preconfigData.autoExecute,
           });
+        } else if (hasPreconfigParams) {
+          console.warn("预配链接未包含有效的云端 Token");
+        }
 
-          // 清理URL参数，避免重复处理
-          this.cleanupUrlParams([
-            "namespace",
-            "authCode",
-            "auth_code",
-            "autoExecute",
-            "auto_execute",
-          ]);
+        if (hasPreconfigParams) {
+          // 尽快从地址栏移除敏感参数，避免刷新时重复处理
+          this.cleanupUrlParams(preconfigParams);
         }
       } catch (error) {
         console.error("解析预配数据失败:", error);
