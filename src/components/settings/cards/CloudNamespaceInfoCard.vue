@@ -144,29 +144,21 @@
       <v-card
         border
         hover
-        subtitle="文档形键值数据库"
-        title="Classworks KV"
+        subtitle="全球分布式键值存储"
+        title="Cloudflare Workers KV"
       >
         <v-card-text>
-          Classworks KV 是厚浪云推出的文档形键值数据库，其是一个开放的云应用平台，为各种应用提供存储服务。此设备正在使用其服务，如果您希望管理设备信息，请前往
-          Classworks KV 的网站，如果您在服务推出前就在使用 Classworks，您的数据已被自动迁移。
-          <br><br>
-          Classworks KV 的全域管理员是
-          <a
-            href="https://wuyuan.dev"
-            target="_blank"
-          >
-            孙悟元
-          </a>
+          当前作业板的数据保存在部署者自己的 Cloudflare KV 命名空间中。
+          云端 Token 仅用于定位本班的数据空间，请只分享给可信设备。
         </v-card-text>
         <v-card-actions>
           <v-btn
-            :href="defaultAuthServer"
+            href="https://dash.cloudflare.com/?to=/:account/workers/kv/namespaces"
             append-icon="mdi-open-in-new"
             class="text-none"
             target="_blank"
           >
-            前往 Classworks KV
+            前往 Cloudflare KV
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -242,7 +234,7 @@
 
 <script>
 import {kvServerProvider} from "@/utils/providers/kvServerProvider";
-import {setSetting, getSetting} from "@/utils/settings";
+import {setSetting} from "@/utils/settings";
 
 export default {
   name: "CloudNamespaceInfoCard",
@@ -258,7 +250,6 @@ export default {
       loading: false,
       hasNamespaceInfo: false,
       showReinitDialog: false, // 确认对话框显示状态
-      defaultAuthServer: getSetting('server.authDomain'),
     };
   },
   watch: {
@@ -303,11 +294,7 @@ export default {
       await this.fetchNamespaceInfo();
     },
     getBindAccountUrl() {
-      const uuid = this.namespaceInfo?.device?.uuid;
-      if (uuid) {
-        return `${this.defaultAuthServer}?uuid=${encodeURIComponent(uuid)}&tolinktoaccount=true`;
-      }
-      return this.defaultAuthServer;
+      return "https://dash.cloudflare.com/?to=/:account/workers/kv/namespaces";
     },
     confirmReinitialize() {
       // 删除 token 配置（设置为空字符串以触发 shouldShowInit）

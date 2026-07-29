@@ -4,9 +4,6 @@
     title="编辑设置"
   >
     <v-list>
-      <setting-item setting-key="randomPicker.enabled" />
-      <v-divider class="my-2" />
-
       <setting-item setting-key="randomPicker.mode" />
       <v-divider class="my-2" />
       <setting-item setting-key="randomPicker.minNumber" />
@@ -25,5 +22,10 @@
 <script>
 import SettingsCard from '@/components/SettingsCard.vue';
 import SettingItem from '../SettingItem.vue';
+
+export default {
+  name: 'RandomPickerSettingsCard',
+  components: { SettingsCard, SettingItem },
+};
 
 </script>

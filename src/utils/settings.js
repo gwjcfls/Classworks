@@ -34,6 +34,8 @@ async function requestPersistentStorage() {
 /**
  * 初始化存储权限
  */
+// Kept for explicit future opt-in; self-hosted builds do not request permissions on load.
+// eslint-disable-next-line no-unused-vars
 async function initializeStorage() {
   const notificationGranted = await requestNotificationPermission();
   if (
@@ -66,10 +68,16 @@ const SETTINGS_STORAGE_KEY = "Classworks_settings";
 const SETTINGS_CHANGED_EVENT = "classworks:settings:changed";
 
 
-// 新增: Classworks云端存储的默认设置
+export function getDefaultServerDomain() {
+  const configured = import.meta.env.VITE_DEFAULT_KV_SERVER;
+  if (configured) return configured.replace(/\/$/, "");
+  if (typeof window !== "undefined") return window.location.origin;
+  return "";
+}
+
+// 自托管 Cloudflare Workers KV 的默认设置
 const classworksCloudDefaults = {
-  "server.domain": import.meta.env.VITE_DEFAULT_KV_SERVER || "https://kv-service.houlang.cloud",
-  //"server.domain": "http://localhost:3030",
+  "server.domain": getDefaultServerDomain(),
   "server.siteKey": "",
 };
 
@@ -229,6 +237,12 @@ const settingsDefinitions = {
     icon: "mdi-clock-fast",
     // 启用后，迟到的人数也会计入出勤人数
   },
+  "attendance.enabled": {
+    type: "boolean",
+    default: true,
+    description: "在主页显示出勤统计",
+    icon: "mdi-account-check",
+  },
   // 服务器设置（合并了数据提供者设置）
   "server.domain": {
     type: "string",
@@ -274,7 +288,7 @@ const settingsDefinitions = {
   },
   "server.authDomain": {
     type: "string",
-    default: import.meta.env.VITE_DEFAULT_AUTH_SERVER || "https://kv.houlang.cloud",
+    default: import.meta.env.VITE_DEFAULT_AUTH_SERVER || getDefaultServerDomain(),
     description: "授权服务器域名",
     icon: "mdi-shield-account",
     validate: (value) => {
@@ -293,7 +307,7 @@ const settingsDefinitions = {
   },
   "server.provider": {
     type: "string",
-    default: "classworkscloud",
+    default: "kv-server",
     validate: (value) =>
       ["kv-local", "kv-server", "classworkscloud"].includes(value),
     description: "数据提供者",
@@ -504,8 +518,8 @@ const settingsDefinitions = {
   "randomPicker.enabled": {
     type: "boolean",
     default: true,
-    description: "是否启用随机点名功能",
-    icon: "mdi-account-question",
+    description: "在主页显示随机点名",
+    icon: "mdi-dice-multiple",
   },
   "randomPicker.animation": {
     type: "boolean",
@@ -719,7 +733,7 @@ class SettingsManagerClass {
 
       // 触发同标签页内的设置变化事件
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, {
+        window.dispatchEvent(new globalThis.CustomEvent(SETTINGS_CHANGED_EVENT, {
           detail: { key, value },
         }));
       }
@@ -774,7 +788,7 @@ class SettingsManagerClass {
 
     // 触发同标签页内的设置变化事件
     if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, {
+      window.dispatchEvent(new globalThis.CustomEvent(SETTINGS_CHANGED_EVENT, {
         detail: { key, value: definition.default },
       }));
     }

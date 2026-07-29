@@ -45,6 +45,8 @@ export default defineConfig({
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [
           /^\/api\//,
+          /^\/kv\//,
+          /^\/apps\//,
           /^\/socket\.io\//,
         ],
         runtimeCaching: [
@@ -102,7 +104,14 @@ export default defineConfig({
               if (!sameOrigin) return false;
               const path = url.pathname;
               // 排除已经由其他规则处理的路径
-              return !(path.includes('/assets/') || path.includes('/pwa/') || path.includes('/sounds/'));
+              return !(
+                path.includes('/assets/') ||
+                path.includes('/pwa/') ||
+                path.includes('/sounds/') ||
+                path.startsWith('/api/') ||
+                path.startsWith('/kv/') ||
+                path.startsWith('/apps/')
+              );
             },
             handler: 'NetworkFirst',
             options: {
@@ -273,8 +282,6 @@ export default defineConfig({
           'vendor-vuetify': ['vuetify'],
           // 监控（异步加载，独立 chunk）
           // 'vendor-sentry': ['@sentry/vue'],
-          // 实时通信
-          'vendor-socket': ['socket.io-client'],
           // 通用工具库
           'vendor-utils': ['axios', 'uuid', 'js-base64'],
         },

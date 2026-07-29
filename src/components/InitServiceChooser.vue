@@ -19,7 +19,7 @@
         <v-card
           class="main-service-card gradient-new clickable"
           elevation="4"
-          @click="showGuideDialog = true"
+          @click="openCloudDialog('create')"
         >
           <v-card-item>
             <div class="card-horizontal-layout">
@@ -36,7 +36,7 @@
                   初次使用
                 </div>
                 <div class="text-body-2 text-medium-emphasis mt-1">
-                  了解 Classworks KV 并开始使用
+                  创建由 Cloudflare KV 保存的云端作业板
                 </div>
               </div>
             </div>
@@ -47,7 +47,7 @@
         <v-card
           class="main-service-card gradient-registered clickable"
           elevation="4"
-          @click="showDeviceAuthDialog = true"
+          @click="openCloudDialog('join')"
         >
           <v-card-item>
             <div class="card-horizontal-layout">
@@ -64,7 +64,7 @@
                   已注册
                 </div>
                 <div class="text-body-2 text-medium-emphasis mt-1">
-                  使用设备 Namespace 登录
+                  使用云端 Token 连接已有作业板
                 </div>
               </div>
             </div>
@@ -89,10 +89,10 @@
               </div>
               <div class="card-content">
                 <div class="text-h6 font-weight-bold">
-                  Classworks KV
+                  Cloudflare KV
                 </div>
                 <div class="text-body-2 text-medium-emphasis mt-1">
-                  打开云端控制台管理数据
+                  打开 Cloudflare 控制台管理数据
                 </div>
               </div>
             </div>
@@ -110,14 +110,6 @@
           使用本地模式
         </v-btn>
         <v-btn
-          prepend-icon="mdi-flash"
-          size="small"
-          variant="tonal"
-          @click="handleAutoAuthorize"
-        >
-          授权码式授权（弃用）
-        </v-btn>
-        <v-btn
           prepend-icon="mdi-key"
           size="small"
           variant="tonal"
@@ -125,43 +117,26 @@
         >
           输入 Token
         </v-btn>
-        <v-btn
-          prepend-icon="mdi-code-tags"
-          size="small"
-          variant="tonal"
-          @click="showAlternativeCodeDialog = true"
-        >
-          输入替代代码
-        </v-btn>
       </div>
 
 
       <div class="footer-hint">
-        完成授权后可使用作业同步、考试看板等在线功能。
+        云端 Token 只保存在你的设备中，请妥善保管并仅分享给本班设备。
       </div>
     </div>
 
     <!-- 对话框 -->
     <v-dialog
-      v-model="showGuideDialog"
+      v-model="showCloudDialog"
       max-width="600"
+      persistent
     >
-      <FirstTimeGuide
-        @close="showGuideDialog = false"
-        @success="handleGuideSuccess"
-      />
-    </v-dialog>
-
-    <v-dialog
-      v-model="showDeviceAuthDialog"
-      max-width="500"
-    >
-      <DeviceAuthDialog
-        ref="deviceAuthDialog"
-        :preconfig="deviceAuthPreconfig"
-        :show-cancel="true"
-        @cancel="showDeviceAuthDialog = false"
-        @success="handleAuthSuccess"
+      <CloudSpaceDialog
+        :auto-connect="preconfig.autoExecute"
+        :initial-token="preconfig.token || ''"
+        :mode="cloudDialogMode"
+        @cancel="handleCloudCancel"
+        @success="handleCloudSuccess"
       />
     </v-dialog>
 
@@ -175,34 +150,20 @@
         @success="handleTokenSuccess"
       />
     </v-dialog>
-
-    <v-dialog
-      v-model="showAlternativeCodeDialog"
-      max-width="500"
-    >
-      <AlternativeCodeDialog
-        :show-cancel="true"
-        @cancel="showAlternativeCodeDialog = false"
-        @submit="handleAlternativeCodeSubmit"
-      />
-    </v-dialog>
   </div>
 </template>
 
 <script setup>
 import {ref, computed, onMounted, watch} from 'vue'
 import {getSetting, setSetting} from '@/utils/settings'
-import DeviceAuthDialog from './auth/DeviceAuthDialog.vue'
 import TokenInputDialog from './auth/TokenInputDialog.vue'
-import AlternativeCodeDialog from './auth/AlternativeCodeDialog.vue'
-import FirstTimeGuide from './auth/FirstTimeGuide.vue'
+import CloudSpaceDialog from './auth/CloudSpaceDialog.vue'
 
 const props = defineProps({
   preconfig: {
     type: Object,
     default: () => ({
-      namespace: null,
-      authCode: null,
+      token: null,
       autoOpen: false,
       autoExecute: false
     })
@@ -215,47 +176,39 @@ const emit = defineEmits(['done'])
 const visible = ref(false)
 
 // 对话框控制
-const showGuideDialog = ref(false)
-const showDeviceAuthDialog = ref(false)
+const showCloudDialog = ref(false)
+const cloudDialogMode = ref('create')
 const showTokenDialog = ref(false)
-const showAlternativeCodeDialog = ref(false)
-
-// 设备认证对话框引用
-const deviceAuthDialog = ref(null)
+const handledPreconfigToken = ref('')
 
 const provider = computed(() => getSetting('server.provider'))
 const isKvProvider = computed(() => provider.value === 'kv-server' || provider.value === 'classworkscloud')
 const kvToken = computed(() => getSetting('server.kvToken'))
 
-// 设备认证预配置数据
-const deviceAuthPreconfig = computed(() => {
-  if (props.preconfig?.namespace) {
-    return {
-      namespace: props.preconfig.namespace,
-      password: props.preconfig.authCode || '',
-      autoExecute: props.preconfig.autoExecute || false
-    }
-  }
-  return null
-})
-
 const evaluateVisibility = () => {
   const path = window.location.pathname
   const onHome = path === '/' || path === '/index' || path === '/index.html'
-  const need = isKvProvider.value && (!kvToken.value || kvToken.value === '')
+  const need =
+    isKvProvider.value &&
+    (props.preconfig?.autoOpen || !kvToken.value || kvToken.value === '')
   visible.value = onHome && need
 }
 
-// 监听预配数据变化，自动打开设备认证对话框
+// 监听预配数据和可见状态，确保组件挂载后仍会打开连接对话框
 watch(
-  () => props.preconfig,
-  (newPreconfig) => {
-    if (newPreconfig?.autoOpen && newPreconfig?.namespace && visible.value) {
-      console.log('检测到预配数据，自动打开设备认证对话框')
-      // 延迟一下确保组件已完全挂载
-      setTimeout(() => {
-        showDeviceAuthDialog.value = true
-      }, 500)
+  [() => props.preconfig, visible],
+  ([newPreconfig, isVisible]) => {
+    const preconfiguredToken = newPreconfig?.token?.trim()
+    if (
+      newPreconfig?.autoOpen &&
+      preconfiguredToken &&
+      isVisible &&
+      handledPreconfigToken.value !== preconfiguredToken
+    ) {
+      handledPreconfigToken.value = preconfiguredToken
+      console.log('检测到预配数据，打开云端 Token 连接对话框')
+      cloudDialogMode.value = 'join'
+      showCloudDialog.value = true
     }
   },
   {immediate: true, deep: true}
@@ -265,37 +218,22 @@ onMounted(() => {
   evaluateVisibility()
 })
 
-const handleAutoAuthorize = () => {
-  const authDomain = getSetting('server.authDomain')
-  const appId = 'd158067f53627d2b98babe8bffd2fd7d'
-  const currentDomain = window.location.origin
-  const callbackUrl = encodeURIComponent(`${currentDomain}/authorizecallback`)
-  const uuid = getSetting('device.uuid') || '00000000-0000-4000-8000-000000000000'
-
-  let url = `${authDomain}/authorize?app_id=${appId}&mode=callback&callback_url=${callbackUrl}&remark=Classworks 自动授权 来自${window.location.hostname} ${new Date().toLocaleString()}`
-  if (uuid !== '00000000-0000-4000-8000-000000000000') {
-    url += `&uuid=${encodeURIComponent(uuid)}`
-  }
-  window.location.href = url
+const openCloudDialog = (mode) => {
+  cloudDialogMode.value = mode
+  showCloudDialog.value = true
 }
 
-const handleGuideSuccess = (tokenData) => {
-  showGuideDialog.value = false
-  console.log('渐进式注册成功:', tokenData)
-  evaluateVisibility()
-  emit('done')
+const handleCloudCancel = () => {
+  showCloudDialog.value = false
+  if (props.preconfig?.autoOpen && kvToken.value) {
+    visible.value = false
+    emit('done')
+  }
 }
 
-const handleAuthSuccess = (tokenData) => {
-  showDeviceAuthDialog.value = false
-  console.log('认证成功:', tokenData)
-
-  // 如果是通过预配数据成功的，显示成功消息
-  if (props.preconfig?.namespace) {
-    // 可以在这里添加成功提示
-    console.log(`预配数据认证成功: ${props.preconfig.namespace}`)
-  }
-
+const handleCloudSuccess = (tokenData) => {
+  showCloudDialog.value = false
+  console.log('云端空间连接成功:', tokenData)
   evaluateVisibility()
   emit('done')
 }
@@ -304,12 +242,6 @@ const handleTokenSuccess = () => {
   showTokenDialog.value = false
   evaluateVisibility()
   emit('done')
-}
-
-const handleAlternativeCodeSubmit = (code) => {
-  console.log('替代代码:', code)
-  // TODO: 实现替代代码逻辑
-  showAlternativeCodeDialog.value = false
 }
 
 const useLocalMode = () => {
@@ -321,7 +253,7 @@ const useLocalMode = () => {
 }
 
 const openClassworksKV = () => {
-  window.open(getSetting('server.authDomain'), '_blank')
+  window.open('https://dash.cloudflare.com/?to=/:account/workers/kv/namespaces', '_blank', 'noopener,noreferrer')
 }
 </script>
 

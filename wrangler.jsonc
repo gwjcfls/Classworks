@@ -1,0 +1,21 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "classworks-board",
+	"main": "worker/index.js",
+	"compatibility_date": "2026-07-28",
+	"assets": {
+		"directory": "./dist",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application",
+		"run_worker_first": true
+	},
+	"kv_namespaces": [
+		{
+			"binding": "CLASSWORKS_KV",
+			"id": "d9446052706c49a1b230813bacac32be"
+		}
+	],
+	"observability": {
+		"enabled": true
+	}
+}
